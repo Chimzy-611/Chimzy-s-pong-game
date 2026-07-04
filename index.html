@@ -2,21 +2,6 @@
 <html>
 <head>
 <meta charset=utf-8>
-<link rel="manifest" href="manifest.json">
-
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<link rel="apple-touch-icon" href="icon-192.png">
-
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('PWA Registered successfully!', reg))
-      .catch(err => console.log('Registration failed: ', err));
-  });
-}
-</script>
 <title>Chimzy Pong Deluxe</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <style>
@@ -48,6 +33,8 @@ body {
     margin: 5px 0;
     color: #4cf;
     font-size: 1rem;
+    border-bottom: 1px dashed #333;
+    padding-bottom: 4px;
 }
 button {
     margin: 4px;
@@ -127,6 +114,7 @@ canvas {
         <option>Easy</option>
         <option selected>Medium</option>
         <option>Hard</option>
+        <option style="color: red; font-weight: bold;">Impossible</option>
     </select>
     <button onclick="start()">Start Game</button>
     <button id="btnPause" onclick="togglePause()">Pause Game</button>
@@ -142,10 +130,12 @@ canvas {
 <div id="shop">
     <div class="shop-section">
         <h3>Skins</h3>
-        <button onclick="buy('skin','red',50)">Red Paddle (+5 Coins/score) (50 🪙)</button>
-        <button onclick="buy('skin','green',100)">Green Paddle (+10 Coins/score) (100 🪙)</button>
-        <button onclick="buy('ball','gold',200)">Gold Ball (2x Coins multiplier) (200 🪙)</button>
-        <button onclick="buy('ball','magenta',150)">Neon Pink Ball (1.5x Coins multiplier) (150 🪙)</button>
+        <button onclick="buy('skin','red',50)">Red Paddle (+5 Coins) (50 🪙)</button>
+        <button onclick="buy('skin','green',100)">Green Paddle (+10 Coins) (100 🪙)</button>
+        <button onclick="buy('skin','rgb',500)" style="border-color: #f4c;">✨ Rainbow RGB Paddle (+25 Coins) (500 🪙)</button>
+        <button onclick="buy('ball','magenta',150)">Neon Pink Ball (1.5x Multiplier) (150 🪙)</button>
+        <button onclick="buy('ball','gold',200)">Gold Ball (2x Multiplier) (200 🪙)</button>
+        <button onclick="buy('ball','glitch',600)" style="border-color: #f4c;">✨ Glitch Matrix Ball (3x Multiplier!) (600 🪙)</button>
     </div>
     
     <div class="shop-section">
@@ -153,12 +143,14 @@ canvas {
         <button onclick="buy('trail','cyan',75)">Cyan Sparks (75 🪙)</button>
         <button onclick="buy('trail','orange',75)">Fire Sparks (75 🪙)</button>
         <button onclick="buy('trail','lime',120)">Matrix Sparks (120 🪙)</button>
+        <button onclick="buy('trail','rainbow',400)" style="border-color: #f4c;">✨ Supernova Sparks (400 🪙)</button>
     </div>
 
     <div class="shop-section">
         <h3>Upgrades</h3>
-        <button onclick="buy('size',140,150)">Long Paddle (+15 Coins/score) (150 🪙)</button>
-        <button onclick="buy('size',70,300)">Hardcore Tiny Paddle (5x Coins multiplier!) (300 🪙)</button>
+        <button onclick="buy('size',140,150)">Long Paddle (+15 Coins) (150 🪙)</button>
+        <button onclick="buy('size',70,300)">Hardcore Tiny Paddle (5x Multiplier!) (300 🪙)</button>
+        <button onclick="buy('size',180,1000)" style="border-color: #f4c;">👑 God Mode Megapaddle (+50 Coins) (1000 🪙)</button>
     </div>
 </div>
 
@@ -172,9 +164,9 @@ const c=cv,g=c.getContext('2d');let ps=0,as=0,k={},parts=[];
 const pl={x:20,y:200,w:15,h:save.paddleH,s:8},ai={x:865,y:200,w:15,h:100,s:5};
 const b={x:450,y:250,r:10,speed:6,vx:6,vy:0};
 
-// Game states
 let isPaused = false;
 let gameRunning = false;
+let hue = 0;
 
 onkeydown=e=>k[e.key.toLowerCase()]=1;
 onkeyup=e=>k[e.key.toLowerCase()]=0;
@@ -190,16 +182,13 @@ c.addEventListener('touchmove',e=>{
 function snd(f,t){let A=new(window.AudioContext||webkitAudioContext)(),o=A.createOscillator(),G=A.createGain();o.connect(G);G.connect(A.destination);o.frequency.value=f;o.start();G.gain.exponentialRampToValueAtTime(.0001,A.currentTime+t);o.stop(A.currentTime+t)}
 
 function start(){
-    ai.s={Easy:3,Medium:5,Hard:8}[diff.value];
+    ai.s={Easy:3,Medium:5,Hard:8,Impossible:16}[diff.value];
     isPaused = false;
     btnPause.textContent = "Pause Game";
     
-    // Only reset position if it's a fresh game start
     if(!gameRunning) {
-        ps = 0;
-        as = 0;
-        p.textContent = 0;
-        a.textContent = 0;
+        ps = 0; as = 0;
+        p.textContent = 0; a.textContent = 0;
         parts = [];
         gameRunning = true;
         serve(-1);
@@ -207,7 +196,7 @@ function start(){
 }
 
 function togglePause() {
-    if(!gameRunning) return; // Can't pause if game hasn't started
+    if(!gameRunning) return;
     isPaused = !isPaused;
     btnPause.textContent = isPaused ? "Resume Game" : "Pause Game";
 }
@@ -216,26 +205,23 @@ function quitGame() {
     gameRunning = false;
     isPaused = false;
     btnPause.textContent = "Pause Game";
-    ps = 0;
-    as = 0;
-    p.textContent = 0;
-    a.textContent = 0;
+    ps = 0; as = 0;
+    p.textContent = 0; a.textContent = 0;
     parts = [];
-    b.x = 450;
-    b.y = 250;
-    b.vx = 0;
-    b.vy = 0;
+    b.x = 450; b.y = 250; b.vx = 0; b.vy = 0;
 }
 
 function serve(d){
-    b.x=450;b.y=250;b.speed=6;b.vx=d*b.speed;b.vy=0;
+    b.x=450; b.y=250;
+    b.speed = (diff.value === "Impossible") ? 15 : 6;
+    b.vx=d*b.speed;
+    b.vy=0;
 }
 
 function buy(type,val,cost){
     if(save.coins<cost)return alert("Need more coins");
     save.coins-=cost;
     coins.textContent=save.coins;
-    
     if(type==="skin") save.skin=val;
     if(type==="ball") save.ball=val;
     if(type==="trail") save.trail=val;
@@ -243,42 +229,63 @@ function buy(type,val,cost){
         save.paddleH=val;
         pl.h=val;
     }
-    
     localStorage.chimzySave=JSON.stringify(save);
 }
 
 function hit(P,left){
     let rel=(b.y-(P.y+P.h/2))/(P.h/2),ang=rel*Math.PI/3;
-    b.speed+=.4;
+    b.speed += (diff.value === "Impossible") ? 0.7 : 0.4;
     let d=left?1:-1;
     b.vx=Math.cos(ang)*b.speed*d;
     b.vy=Math.sin(ang)*b.speed;
     snd(600,.05);
-    for(let i=0;i<8;i++)parts.push({x:b.x,y:b.y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,l:20})}
+    
+    let count = (save.trail === "rainbow") ? 20 : 8;
+    for(let i=0;i<count;i++){
+        let spdMult = (save.trail === "rainbow") ? 8 : 4;
+        parts.push({
+            x:b.x,
+            y:b.y,
+            vx:(Math.random()-.5)*spdMult,
+            vy:(Math.random()-.5)*spdMult,
+            l:(save.trail === "rainbow") ? 35 : 20,
+            hue: Math.random()*360
+        });
+    }
+}
 
 function ach(t){if(!save.ach.includes(t)){save.ach.push(t);alert("Achievement: "+t);localStorage.chimzySave=JSON.stringify(save)}}
 
 function calculateCoinsEarned() {
+    if (diff.value === "Impossible") return 100;
+
     let base = 10;
     if (save.skin === 'red') base += 5;
     if (save.skin === 'green') base += 10;
+    if (save.skin === 'rgb') base += 25;
     if (save.paddleH === 140) base += 15;
+    if (save.paddleH === 180) base += 50; // Dynamic coins for the adjusted 180px paddle
     
     let multiplier = 1;
     if (save.ball === 'magenta') multiplier *= 1.5;
     if (save.ball === 'gold') multiplier *= 2;
+    if (save.ball === 'glitch') multiplier *= 3;
     if (save.paddleH === 70) multiplier *= 5;
     
     return Math.floor(base * multiplier);
 }
 
 function loop(){
-    // Only run movement/physics updates if the game is active and not paused
+    hue = (hue + 2) % 360;
+    
     if (gameRunning && !isPaused) {
         if(k.w||k.arrowup)pl.y-=pl.s;
         if(k.s||k.arrowdown)pl.y+=pl.s;
         pl.y=Math.max(0,Math.min(500-pl.h,pl.y));
-        ai.y+=(b.y-(ai.y+50))*.08;
+        
+        let aiTargetSpeed = (diff.value === "Impossible") ? 0.18 : 0.08;
+        ai.y+=(b.y-(ai.y+50))*aiTargetSpeed;
+        
         b.x+=b.vx;b.y+=b.vy;
         if(b.y<10||b.y>490){b.vy*=-1;snd(300,.03)}
         
@@ -302,19 +309,35 @@ function loop(){
         });
     }
     
-    // Always render the canvas elements even if paused so the graphics don't vanish
-    g.clearRect(0,0,900,500);g.shadowBlur=15;g.shadowColor=save.skin;g.fillStyle=save.skin;g.fillRect(pl.x,pl.y,15,pl.h);g.fillStyle="#fff";g.fillRect(ai.x,ai.y,15,100);g.shadowColor=save.ball;g.fillStyle=save.ball;g.beginPath();g.arc(b.x,b.y,10,0,7);g.fill();
+    g.clearRect(0,0,900,500);
+    g.shadowBlur=15;
+    
+    let currentSkinColor = (save.skin === 'rgb') ? `hsl(${hue}, 100%, 50%)` : save.skin;
+    g.shadowColor=currentSkinColor; g.fillStyle=currentSkinColor;
+    g.fillRect(pl.x,pl.y,15,pl.h);
+    
+    g.fillStyle="#fff"; g.fillRect(ai.x,ai.y,15,100);
+    
+    let currentBallColor = save.ball;
+    if(save.ball === 'glitch') {
+        currentBallColor = (Math.random() > 0.4) ? `hsl(${(hue+180)%360}, 100%, 60%)` : '#00ff00';
+    }
+    g.shadowColor=currentBallColor; g.fillStyle=currentBallColor;
+    g.beginPath();g.arc(b.x,b.y,10,0,7);g.fill();
     
     parts.forEach((p)=>{
         g.shadowBlur=0;
-        g.fillStyle=save.trail;
+        if (save.trail === 'rainbow') {
+            g.fillStyle = `hsl(${p.hue}, 100%, 60%)`;
+        } else {
+            g.fillStyle=save.trail;
+        }
         g.fillRect(p.x,p.y,3,3);
     });
     
     requestAnimationFrame(loop)
 }
 
-// Setup the initial layout without launching the ball right away
 quitGame();
 loop();
 </script>
