@@ -1,0 +1,322 @@
+<!doctype html>
+<html>
+<head>
+<meta charset=utf-8>
+<link rel="manifest" href="manifest.json">
+
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="icon-192.png">
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('PWA Registered successfully!', reg))
+      .catch(err => console.log('Registration failed: ', err));
+  });
+}
+</script>
+<title>Chimzy Pong Deluxe</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<style>
+/* --- DESKTOP STYLES --- */
+body {
+    margin: 0;
+    background: #181818;
+    color: #fff;
+    font-family: Arial;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 20px;
+    overflow-x: hidden;
+}
+#menu, #shop {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+    margin: 10px;
+}
+.shop-section {
+    width: 100%;
+    margin-top: 10px;
+}
+.shop-section h3 {
+    margin: 5px 0;
+    color: #4cf;
+    font-size: 1rem;
+}
+button {
+    margin: 4px;
+    padding: 10px 16px;
+    background: #222;
+    color: #fff;
+    border: 2px solid #4cf;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: bold;
+}
+button:active {
+    background: #4cf;
+    color: #000;
+}
+canvas {
+    display: block;
+    margin: 15px auto;
+    background: #111;
+    border: 3px solid #fff;
+    box-shadow: 0 0 20px #4cf;
+    max-width: 100%;
+    height: auto;
+    touch-action: none;
+}
+.score-board {
+    font-size: 1.2rem;
+    margin: 10px 0;
+}
+
+/* --- MOBILE ONLY HORIZONTAL OPTIMIZATION --- */
+@media (max-width: 700px) {
+    body {
+        padding: 5px;
+    }
+    h2 {
+        font-size: 1.2rem;
+        margin: 5px 0;
+    }
+    canvas {
+        width: 95vw;
+        max-width: 100%;
+        height: auto;
+        margin: 5px auto;
+    }
+    #menu, #shop {
+        display: flex;
+        flex-direction: row;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 6px;
+        width: 100%;
+    }
+    .shop-section {
+        margin-top: 5px;
+    }
+    button {
+        padding: 8px 12px;
+        font-size: 0.85rem;
+        flex: 1 1 auto;
+        max-width: 45%;
+    }
+    .score-board {
+        font-size: 1rem;
+        margin: 4px 0;
+    }
+}
+</style>
+</head>
+<body>
+
+<h2>🏓 Chimzy Pong Deluxe</h2>
+
+<div id="menu">
+    Difficulty:
+    <select id="diff">
+        <option>Easy</option>
+        <option selected>Medium</option>
+        <option>Hard</option>
+    </select>
+    <button onclick="start()">Start Game</button>
+    <button id="btnPause" onclick="togglePause()">Pause Game</button>
+    <button onclick="quitGame()">Quit Game</button>
+</div>
+
+<div class="score-board">
+    Player: <span id="p">0</span> | AI: <span id="a">0</span> | Coins: <span id="coins">0</span>
+</div>
+
+<canvas id="cv" width="900" height="500"></canvas>
+
+<div id="shop">
+    <div class="shop-section">
+        <h3>Skins</h3>
+        <button onclick="buy('skin','red',50)">Red Paddle (+5 Coins/score) (50 🪙)</button>
+        <button onclick="buy('skin','green',100)">Green Paddle (+10 Coins/score) (100 🪙)</button>
+        <button onclick="buy('ball','gold',200)">Gold Ball (2x Coins multiplier) (200 🪙)</button>
+        <button onclick="buy('ball','magenta',150)">Neon Pink Ball (1.5x Coins multiplier) (150 🪙)</button>
+    </div>
+    
+    <div class="shop-section">
+        <h3>Trail Sparks</h3>
+        <button onclick="buy('trail','cyan',75)">Cyan Sparks (75 🪙)</button>
+        <button onclick="buy('trail','orange',75)">Fire Sparks (75 🪙)</button>
+        <button onclick="buy('trail','lime',120)">Matrix Sparks (120 🪙)</button>
+    </div>
+
+    <div class="shop-section">
+        <h3>Upgrades</h3>
+        <button onclick="buy('size',140,150)">Long Paddle (+15 Coins/score) (150 🪙)</button>
+        <button onclick="buy('size',70,300)">Hardcore Tiny Paddle (5x Coins multiplier!) (300 🪙)</button>
+    </div>
+</div>
+
+<script>
+let save=JSON.parse(localStorage.chimzySave||'{"coins":0,"skin":"white","ball":"white","trail":"cyan","paddleH":100,"ach":[]}')
+if(save.trail===undefined) save.trail = "cyan";
+if(save.paddleH===undefined) save.paddleH = 100;
+coins.textContent=save.coins;
+
+const c=cv,g=c.getContext('2d');let ps=0,as=0,k={},parts=[];
+const pl={x:20,y:200,w:15,h:save.paddleH,s:8},ai={x:865,y:200,w:15,h:100,s:5};
+const b={x:450,y:250,r:10,speed:6,vx:6,vy:0};
+
+// Game states
+let isPaused = false;
+let gameRunning = false;
+
+onkeydown=e=>k[e.key.toLowerCase()]=1;
+onkeyup=e=>k[e.key.toLowerCase()]=0;
+
+c.addEventListener('touchmove',e=>{
+    if(!gameRunning || isPaused) return;
+    let r=c.getBoundingClientRect();
+    let y=e.touches[0].clientY-r.top;
+    pl.y=(y/r.height)*500-(pl.h/2);
+    e.preventDefault()
+},{passive:false});
+
+function snd(f,t){let A=new(window.AudioContext||webkitAudioContext)(),o=A.createOscillator(),G=A.createGain();o.connect(G);G.connect(A.destination);o.frequency.value=f;o.start();G.gain.exponentialRampToValueAtTime(.0001,A.currentTime+t);o.stop(A.currentTime+t)}
+
+function start(){
+    ai.s={Easy:3,Medium:5,Hard:8}[diff.value];
+    isPaused = false;
+    btnPause.textContent = "Pause Game";
+    
+    // Only reset position if it's a fresh game start
+    if(!gameRunning) {
+        ps = 0;
+        as = 0;
+        p.textContent = 0;
+        a.textContent = 0;
+        parts = [];
+        gameRunning = true;
+        serve(-1);
+    }
+}
+
+function togglePause() {
+    if(!gameRunning) return; // Can't pause if game hasn't started
+    isPaused = !isPaused;
+    btnPause.textContent = isPaused ? "Resume Game" : "Pause Game";
+}
+
+function quitGame() {
+    gameRunning = false;
+    isPaused = false;
+    btnPause.textContent = "Pause Game";
+    ps = 0;
+    as = 0;
+    p.textContent = 0;
+    a.textContent = 0;
+    parts = [];
+    b.x = 450;
+    b.y = 250;
+    b.vx = 0;
+    b.vy = 0;
+}
+
+function serve(d){
+    b.x=450;b.y=250;b.speed=6;b.vx=d*b.speed;b.vy=0;
+}
+
+function buy(type,val,cost){
+    if(save.coins<cost)return alert("Need more coins");
+    save.coins-=cost;
+    coins.textContent=save.coins;
+    
+    if(type==="skin") save.skin=val;
+    if(type==="ball") save.ball=val;
+    if(type==="trail") save.trail=val;
+    if(type==="size") {
+        save.paddleH=val;
+        pl.h=val;
+    }
+    
+    localStorage.chimzySave=JSON.stringify(save);
+}
+
+function hit(P,left){
+    let rel=(b.y-(P.y+P.h/2))/(P.h/2),ang=rel*Math.PI/3;
+    b.speed+=.4;
+    let d=left?1:-1;
+    b.vx=Math.cos(ang)*b.speed*d;
+    b.vy=Math.sin(ang)*b.speed;
+    snd(600,.05);
+    for(let i=0;i<8;i++)parts.push({x:b.x,y:b.y,vx:(Math.random()-.5)*4,vy:(Math.random()-.5)*4,l:20})}
+
+function ach(t){if(!save.ach.includes(t)){save.ach.push(t);alert("Achievement: "+t);localStorage.chimzySave=JSON.stringify(save)}}
+
+function calculateCoinsEarned() {
+    let base = 10;
+    if (save.skin === 'red') base += 5;
+    if (save.skin === 'green') base += 10;
+    if (save.paddleH === 140) base += 15;
+    
+    let multiplier = 1;
+    if (save.ball === 'magenta') multiplier *= 1.5;
+    if (save.ball === 'gold') multiplier *= 2;
+    if (save.paddleH === 70) multiplier *= 5;
+    
+    return Math.floor(base * multiplier);
+}
+
+function loop(){
+    // Only run movement/physics updates if the game is active and not paused
+    if (gameRunning && !isPaused) {
+        if(k.w||k.arrowup)pl.y-=pl.s;
+        if(k.s||k.arrowdown)pl.y+=pl.s;
+        pl.y=Math.max(0,Math.min(500-pl.h,pl.y));
+        ai.y+=(b.y-(ai.y+50))*.08;
+        b.x+=b.vx;b.y+=b.vy;
+        if(b.y<10||b.y>490){b.vy*=-1;snd(300,.03)}
+        
+        if(b.vx<0&&b.x<35&&b.y>pl.y&&b.y<pl.y+pl.h)hit(pl,true);
+        if(b.vx>0&&b.x>865&&b.y>ai.y&&b.y<ai.y+100)hit(ai,false);
+        if(b.x<0){a.textContent=++as;serve(1)}
+        
+        if(b.x>900){
+            p.textContent=++ps;
+            let earned = calculateCoinsEarned();
+            save.coins += earned;
+            coins.textContent=save.coins;
+            if(save.coins>=100)ach("100 Coins");
+            localStorage.chimzySave=JSON.stringify(save);
+            serve(-1);
+        }
+        
+        parts.forEach((p,i)=>{
+            p.x+=p.vx;p.y+=p.vy;p.l--;
+            if(p.l<0)parts.splice(i,1)
+        });
+    }
+    
+    // Always render the canvas elements even if paused so the graphics don't vanish
+    g.clearRect(0,0,900,500);g.shadowBlur=15;g.shadowColor=save.skin;g.fillStyle=save.skin;g.fillRect(pl.x,pl.y,15,pl.h);g.fillStyle="#fff";g.fillRect(ai.x,ai.y,15,100);g.shadowColor=save.ball;g.fillStyle=save.ball;g.beginPath();g.arc(b.x,b.y,10,0,7);g.fill();
+    
+    parts.forEach((p)=>{
+        g.shadowBlur=0;
+        g.fillStyle=save.trail;
+        g.fillRect(p.x,p.y,3,3);
+    });
+    
+    requestAnimationFrame(loop)
+}
+
+// Setup the initial layout without launching the ball right away
+quitGame();
+loop();
+</script>
+</body>
+</html>
